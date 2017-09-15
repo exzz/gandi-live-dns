@@ -59,7 +59,7 @@ cd package
 makepkg .
 ```
 
-#### rune with systemd
+#### Run with systemd
 ```
 systemd start gandi-live-dns.service
 ```
