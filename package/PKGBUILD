@@ -1,0 +1,35 @@
+pkgname='gandi-live-dns'
+_gitname='gandi-live-dns'
+pkgver=r12.f9e3df5
+pkgrel=1
+pkgdesc=''
+arch=('i686' 'x86_64')
+url=''
+license=('')
+depends=('python2' 'python2-requests' 'python2-dnspython')
+makedepends=()
+provides=('gandi-live-dns')
+source=('git+https://github.com/exzz/gandi-live-dns'
+        'gandi-live-dns.install'
+        'gandi-live-dns.service'
+        'gandi-live-dns.timer')
+md5sums=('SKIP'
+         'SKIP'
+         'SKIP'
+         'SKIP')
+
+pkgver() {
+  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+
+package()
+{
+  cd "$srcdir"
+  install -Dm644 gandi-live-dns.service "$pkgdir/usr/lib/systemd/system/gandi-live-dns.service"
+  install -Dm644 gandi-live-dns.timer "$pkgdir/usr/lib/systemd/system/gandi-live-dns.timer"
+
+  cd "$srcdir/gandi-live-dns/src/"
+  install -Dm755 gandi-live-dns.py "$pkgdir/usr/local/bin/gandi-live-dns/gandi-live-dns.py"
+  install -Dm644 example.config.py "$pkgdir/usr/local/bin/gandi-live-dns/example.config.py"
+}

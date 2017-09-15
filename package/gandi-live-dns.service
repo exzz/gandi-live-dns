@@ -1,0 +1,10 @@
+[Unit]
+Description=Dynamic DNS update
+
+[Service]
+Type=oneshot
+User=nobody
+Group=nobody
+ExecStart=/usr/local/bin/gandi-live-dns/gandi-live-dns.py -6
+WorkingDirectory=/usr/local/bin/gandi-live-dns/
+
