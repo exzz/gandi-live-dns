@@ -18,7 +18,7 @@ Gandiv5 LiveDNS API Location
 http://doc.livedns.gandi.net/#api-endpoint
 https://dns.beta.gandi.net/api/v5/
 '''
-api_endpoint = 'https://dns.beta.gandi.net/api/v5'
+api_endpoint = 'https://dns.api.gandi.net/api/v5'
 
 #your domain with the subdomains in the zone file/UUID 
 domain = 'mydomain.tld'
@@ -28,18 +28,3 @@ subdomains = ["subdomain1", "subdomain2", "subdomain3"]
 
 #300 seconds = 5 minutes
 ttl = '300'
-
-''' 
-IP address lookup service 
-run your own external IP provider:
-+ https://github.com/mpolden/ipd
-+ <?php $ip = $_SERVER['REMOTE_ADDR']; ?>
-  <?php print $ip; ?>
-e.g. 
-+ https://ifconfig.co
-+ http://ifconfig.me/ip
-+ http://whatismyip.akamai.com/
-+ http://ipinfo.io/ip
-+ many more ...
-'''
-ifconfig = 'choose_from_above_or_run_your_own'

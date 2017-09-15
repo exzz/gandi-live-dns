@@ -4,27 +4,35 @@
 Gandi v5 LiveDNS - DynDNS Update via REST API and CURL/requests
 
 @author: cave
+@author: Nicolas Leclercq
 License GPLv3
 https://www.gnu.org/licenses/gpl-3.0.html
 
 Created on 13 Aug 2017
 http://doc.livedns.gandi.net/ 
-http://doc.livedns.gandi.net/#api-endpoint -> https://dns.beta.gandi.net/api/v5/
 '''
-
+from __future__ import print_function
 import requests, json
 import config
 import argparse
+import dns.resolver
 
 
-def get_dynip(ifconfig_provider):
-    ''' find out own IPv4 at home <-- this is the dynamic IP which changes more or less frequently
-    similar to curl ifconfig.me/ip, see example.config.py for details to ifconfig providers 
-    ''' 
-    r = requests.get(ifconfig_provider)
-    print 'Checking dynamic IP: ' , r._content.strip('\n')
-    return r.content.strip('\n')
-
+def get_pubip(type='ipv4'):
+    
+    rdtype = ('AAAA' if type == 'ipv6' else 'A')
+    servers = (['2620:0:ccc::2', '2620:0:ccd::2'] if type == 'ipv6' else ['208.67.222.222', '208.67.220.220'])
+    
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.nameservers = servers
+    try:
+        answers = resolver.query('myip.opendns.com', rdtype)
+    except dns.exception.DNSException as e:
+        print('Cannot get public', type, ':', e)
+        exit(1)
+        
+    return answers[0].address
+    
 def get_uuid():
     ''' 
     find out ZONE UUID from domain
@@ -33,16 +41,20 @@ def get_uuid():
         
     '''
     url = config.api_endpoint + '/domains/' + config.domain
-    u = requests.get(url, headers={"X-Api-Key":config.api_secret})
+    try:
+        headers = {"X-Api-Key":config.api_secret}
+        u = requests.get(url, headers=headers)
+    except requests.exceptions.RequestException as e:
+        print('Cannot get', config.domain, 'uuid', ':', e)
+    
     json_object = json.loads(u._content)
     if u.status_code == 200:
         return json_object['zone_uuid']
     else:
-        print 'Error: HTTP Status Code ', u.status_code, 'when trying to get Zone UUID'
-        print  json_object['message']
-        exit()
+        print('Cannot get', config.domain, 'uuid', ':', json_object['message'])
+        exit(1)
 
-def get_dnsip(uuid):
+def get_dnsip(uuid, type='ipv4'):
     ''' find out IP from first Subdomain DNS-Record
     List all records with name "NAME" and type "TYPE" in the zone UUID
     GET /zones/<UUID>/records/<NAME>/<TYPE>:
@@ -51,77 +63,81 @@ def get_dnsip(uuid):
     the actual DNS Record IP
     '''
 
-    url = config.api_endpoint+ '/zones/' + uuid + '/records/' + config.subdomains[0] + '/A'
-    headers = {"X-Api-Key":config.api_secret}
-    u = requests.get(url, headers=headers)
+    rdtype = ('AAAA' if type == 'ipv6' else 'A')
+    url = config.api_endpoint+ '/zones/' + uuid + '/records/' + config.subdomains[0] + '/' + rdtype
+    try:
+        headers = {"X-Api-Key":config.api_secret}
+        u = requests.get(url, headers=headers)
+    except requests.exceptions.RequestException as e:
+        print('Cannot get', type, 'from subdomain', config.subdomains[0], ':', e)
+        exit(1)
+        
+    json_object = json.loads(u._content)
     if u.status_code == 200:
-        json_object = json.loads(u._content)
-        print 'Checking IP from DNS Record' , config.subdomains[0], ':', json_object['rrset_values'][0].encode('ascii','ignore').strip('\n')
         return json_object['rrset_values'][0].encode('ascii','ignore').strip('\n')
     else:
-        print 'Error: HTTP Status Code ', u.status_code, 'when trying to get IP from subdomain', config.subdomains[0]   
-        print  json_object['message']
-        exit()
+        print('Cannot get', type, 'from subdomain', config.subdomains[0], ':', json_object['message']) 
+        exit(1)
 
-def update_records(uuid, dynIP, subdomain):
+def update_records(uuid, ip, subdomain, type='ipv4'):
     ''' update DNS Records for Subdomains 
         Change the "NAME"/"TYPE" record from the zone UUID
         PUT /zones/<UUID>/records/<NAME>/<TYPE>:
         curl -X PUT -H "Content-Type: application/json" \
                     -H 'X-Api-Key: XXX' \
                     -d '{"rrset_ttl": 10800,
-                         "rrset_values": ["<VALUE>"]}' \
+                         "rrset_values": ["<VALUE>"]' \
                     https://dns.beta.gandi.net/api/v5/zones/<UUID>/records/<NAME>/<TYPE>
     '''
-    url = config.api_endpoint+ '/zones/' + uuid + '/records/' + subdomain + '/A'
-    payload = {"rrset_ttl": config.ttl, "rrset_values": [dynIP]}
+    
+    rdtype = ('AAAA' if type == 'ipv6' else 'A')
+    url = config.api_endpoint+ '/zones/' + uuid + '/records/' + subdomain + '/' + rdtype
+    payload = {"rrset_ttl": config.ttl, "rrset_values": [ip]}
     headers = {"Content-Type": "application/json", "X-Api-Key":config.api_secret}
-    u = requests.put(url, data=json.dumps(payload), headers=headers)
+    try:
+        u = requests.put(url, data=json.dumps(payload), headers=headers)
+    except requests.exceptions.RequestException as e:
+        print('Cannot update', subdomain, ':', e)
+        exit(1)
+        
     json_object = json.loads(u._content)
+    if u.status_code != 201:
+        print('Cannot update', subdomain, ':', json_object['message'])
+        exit(1)
 
-    if u.status_code == 201:
-        print 'Status Code:', u.status_code, ',', json_object['message'], ', IP updated for', subdomain
-        return True
-    else:
-        print 'Error: HTTP Status Code ', u.status_code, 'when trying to update IP from subdomain', subdomain   
-        print  json_object['message']
-        exit()
-
-
-
-def main(force_update, verbosity):
-
-    if verbosity:
-        print "verbosity turned on - not implemented by now"
-
+def main(enable_ipv6, force_update):
         
     #get zone ID from Account
     uuid = get_uuid()
-   
-    #compare dynIP and DNS IP 
-    dynIP = get_dynip(config.ifconfig)
-    dnsIP = get_dnsip(uuid)
     
-    if force_update:
-        print "Going to update/create the DNS Records for the subdomains"
-        for sub in config.subdomains:
-            update_records(uuid, dynIP, sub)
-    else:
-        if dynIP == dnsIP:
-            print "IP Address Match - no further action"
-        else:
-            print "IP Address Mismatch - going to update the DNS Records for the subdomains with new IP", dynIP
+    todo_type= ['ipv4']
+    if enable_ipv6:
+        todo_type.append('ipv6') 
+    
+    for type in todo_type:
+   
+        pubip = get_pubip(type)
+        verboseprint('Public', type, 'is', pubip)
+        
+        dnsip = get_dnsip(uuid, type)
+        verboseprint('DNS', type, 'is', dnsip)
+        
+        if force_update or (pubip != dnsip):
             for sub in config.subdomains:
-                update_records(uuid, dynIP, sub)
+                update_records(uuid, pubip, sub, type)
+                print('DNS record', sub, 'updated to', pubip)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('-6', '--ipv6', help="Enable ipv6 support", action="store_true")
     parser.add_argument('-v', '--verbose', help="increase output verbosity", action="store_true")
     parser.add_argument('-f', '--force', help="force an update/create", action="store_true")
     args = parser.parse_args()
+    
+    verboseprint = print if args.verbose else lambda *a, **k: None
         
         
-    main(args.force, args.verbose)
+    main(args.ipv6, args.force)
 
 
 
